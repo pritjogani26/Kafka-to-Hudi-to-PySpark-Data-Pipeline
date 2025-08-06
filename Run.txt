@@ -1,0 +1,60 @@
+# Run.txt
+
+# ===============================================
+# ✅ Project Run Steps — Docker-based Execution
+# ===============================================
+
+# ---------------------------------------------
+# 1. Start Docker containers (PowerShell)
+# ---------------------------------------------
+cd .\ProjectRepo\   
+docker-compose up --build -d
+
+# ------------------------------------------------------
+# 2. Create Kafka topic for creation
+# ------------------------------------------------------
+docker exec -it kafka kafka-topics.sh `
+   --create `
+   --topic first-topic `
+   --bootstrap-server localhost:9092 `
+   --partitions 1 `
+   --replication-factor 1
+
+# ------------------------------------------------------
+# 3. Produce Kafka messages (run inside Docker container)
+# ------------------------------------------------------
+docker exec spark-hudi python /producer/producer.py
+
+# You should see: "Sent: <some_uuid>" multiple times
+
+# -------------------------------------------------------
+# 4. Run PySpark Structured Streaming (inside container)
+# -------------------------------------------------------
+docker exec -it spark-hudi bash
+# Then inside container:
+spark-submit \
+  --packages org.apache.hudi:hudi-spark3.4-bundle_2.12:0.14.1,org.apache.spark:spark-sql-kafka-0-10_2.12:3.4.1 \
+  --conf spark.serializer=org.apache.spark.serializer.KryoSerializer \
+  /consumer/streaming_user_consumer.py
+
+
+# Wait a few seconds for data to ingest
+
+# ------------------------------------------
+# 5. Query the Hudi snapshot (inside Docker)
+# ------------------------------------------
+docker exec -it spark-hudi bash
+# Then inside container:
+spark-submit \
+  --packages org.apache.hudi:hudi-spark3.4-bundle_2.12:0.14.1 \
+  --conf spark.serializer=org.apache.spark.serializer.KryoSerializer \
+  /snapshot/read_hudi_snapshot.py
+
+
+# You should see printed records from user_table
+
+
+# -----------------------------------
+# 6. Shut down everything (PowerShell)
+# -----------------------------------
+docker-compose down
